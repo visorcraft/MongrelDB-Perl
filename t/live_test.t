@@ -33,7 +33,7 @@ unless (server_reachable()) {
     plan skip_all => "MONGRELDB_URL not reachable at $url";
 }
 
-plan tests => 9;
+plan tests => 13;
 
 # The daemon requires JSON booleans (not 1/0) for primary_key/nullable, so
 # the column descriptors use JSON::PP::true / JSON::PP::false.
@@ -112,4 +112,49 @@ my $unique = time() . substr(int(rand(100000)), 0, 5);
     ok((grep { $_ eq $name } @names), 'table appears in tables()');
     my $desc = $db->schemaFor($name);
     ok(keys %$desc > 0, 'schemaFor returns a non-empty descriptor');
+}
+
+# 7. Range query returns only the rows within the bounds.
+{
+    my $db   = MongrelDB::connect($url);
+    my $name = "perl_range_$unique";
+    $db->createTable($name, $columns);
+    $db->put($name, { 1 => 1, 2 => 'a', 3 => 50.0 });
+    $db->put($name, { 1 => 2, 2 => 'b', 3 => 75.0 });
+    $db->put($name, { 1 => 3, 2 => 'c', 3 => 90.0 });
+    $db->put($name, { 1 => 4, 2 => 'd', 3 => 100.0 });
+    # Only scores >= 80 should come back (90 and 100) - assert the count.
+    my ($rows) = $db->query($name, [
+        MongrelDB::condition('range', { column => 3, min => 80.0 }),
+    ]);
+    is(scalar(@$rows), 2, 'range query returns exactly 2 rows');
+}
+
+# 8. schemaFor on a nonexistent table dies with a not_found error.
+{
+    my $db = MongrelDB::connect($url);
+    my $err;
+    eval { $db->schemaFor('nonexistent_table_xyz'); };
+    $err = $@;
+    ok(ref($err) && $err->{type} eq 'not_found',
+        'schemaFor on missing table raises a not_found error');
+}
+
+# 9. Idempotent transaction does not duplicate the row.
+{
+    my $db   = MongrelDB::connect($url);
+    my $name = "perl_idem_$unique";
+    $db->createTable($name, $columns);
+    # First idempotent commit inserts the row.
+    $db->transaction([
+        { put => { table => $name, cells => [1, 100, 2, 'order', 3, 1.0] } },
+    ], 'order-100-create');
+    is($db->count($name), 1, 'idempotent commit inserts one row');
+    # A second, identical commit with the SAME key must not duplicate it.
+    eval {
+        $db->transaction([
+            { put => { table => $name, cells => [1, 100, 2, 'order', 3, 1.0] } },
+        ], 'order-100-create');
+    };
+    is($db->count($name), 1, 'duplicate idempotent commit does not duplicate the row');
 }
