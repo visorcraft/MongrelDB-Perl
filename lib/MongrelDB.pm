@@ -76,6 +76,15 @@ sub _make_error {
     return bless $err, 'MongrelDB::Error';
 }
 
+# Percent-encode a single URL path segment so a table name containing '/',
+# '?', '#', or spaces cannot inject extra segments or break routing.
+sub _encode_segment {
+    my ($seg) = @_;
+    $seg = '' unless defined $seg;
+    $seg =~ s/([^A-Za-z0-9\-_.~])/sprintf("%%%02X", ord($1))/ge;
+    return $seg;
+}
+
 # Decode the daemon's {"error":{"message":...,"code":...,"op_index":...}}
 # envelope when present. Returns ($message, $code, $op_index).
 sub _parse_error_envelope {
@@ -110,9 +119,11 @@ sub _normalize_condition {
 
 # Recursively walk a payload and die with a query error if any numeric value
 # is NaN or Infinity. These have no valid JSON representation; rejecting them
-# here keeps the request from corrupting data on the server.
+# here keeps the request from corrupting data on the server. Tracks seen refs
+# to avoid infinite recursion on cyclic data structures.
 sub _reject_nonfinite {
-    my ($val) = @_;
+    my ($val, $seen) = @_;
+    $seen //= {};
     my $ref = ref $val;
     if (!$ref) {
         if (defined $val && Scalar::Util::looks_like_number($val)) {
@@ -125,12 +136,15 @@ sub _reject_nonfinite {
         }
         return;
     }
+    # Guard against cycles: use the refaddr as a visit marker.
+    my $addr = Scalar::Util::refaddr($val);
+    return if $seen->{$addr}++;
     if ($ref eq 'ARRAY') {
-        _reject_nonfinite($_) for @$val;
+        _reject_nonfinite($_, $seen) for @$val;
         return;
     }
     if ($ref eq 'HASH') {
-        _reject_nonfinite($_) for values %$val;
+        _reject_nonfinite($_, $seen) for values %$val;
         return;
     }
     return;
@@ -214,9 +228,17 @@ sub _new {
         url         => $url,
         auth_header => $auth_header,
         http        => $opts->{http} || HTTP::Tiny->new(
-            timeout    => 60,
-            agent      => 'mongreldb-perl/' . $VERSION,
-            keep_alive => 1,
+            timeout       => 60,
+            agent         => 'mongreldb-perl/' . $VERSION,
+            keep_alive    => 1,
+            # Security: never follow redirects (an Authorization header could
+            # follow a redirect to an attacker-controlled host) and never use
+            # proxy env vars unless the caller explicitly opts in via
+            # $opts->{http}. This prevents DB auth/data leaking to a proxy.
+            max_redirect  => 0,
+            proxy         => undef,
+            http_proxy    => undef,
+            https_proxy   => undef,
         ),
         json        => $json,
     }, $class;
@@ -268,15 +290,19 @@ sub createTable {
 # Drop a table by name.
 sub dropTable {
     my ($self, $name) = @_;
-    $self->_request('DELETE', "tables/$name");
+    $self->_request('DELETE', "tables/" . _encode_segment($name));
     return;
 }
 
 # Row count for a table.
 sub count {
     my ($self, $table) = @_;
-    my $data = $self->_request('GET', "tables/$table/count");
-    return (ref $data eq 'HASH') ? ($data->{count} // 0) : 0;
+    my $data = $self->_request('GET', "tables/" . _encode_segment($table) . "/count");
+    if (ref $data eq 'HASH' && defined $data->{count}
+        && Scalar::Util::looks_like_number($data->{count})) {
+        return $data->{count} + 0;
+    }
+    die _make_error('query', 'malformed count response from server');
 }
 
 # Insert a row. $cells maps column id to value ({ 1 => 1, 2 => 'Alice' }).
@@ -352,7 +378,7 @@ sub schema {
 # Descriptor for a single table.
 sub schemaFor {
     my ($self, $table) = @_;
-    my $data = $self->_request('GET', "kit/schema/$table");
+    my $data = $self->_request('GET', "kit/schema/" . _encode_segment($table));
     return (ref $data eq 'HASH') ? $data : {};
 }
 
