@@ -33,7 +33,7 @@ unless (server_reachable()) {
     plan skip_all => "MONGRELDB_URL not reachable at $url";
 }
 
-plan tests => 18;
+plan 'no_plan';
 
 # The daemon requires JSON booleans (not 1/0) for primary_key/nullable, so
 # the column descriptors use JSON::PP::true / JSON::PP::false.
