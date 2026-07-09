@@ -33,7 +33,7 @@ unless (server_reachable()) {
     plan skip_all => "MONGRELDB_URL not reachable at $url";
 }
 
-plan tests => 13;
+plan tests => 18;
 
 # The daemon requires JSON booleans (not 1/0) for primary_key/nullable, so
 # the column descriptors use JSON::PP::true / JSON::PP::false.
@@ -63,6 +63,11 @@ my $unique = time() . substr(int(rand(100000)), 0, 5);
     is($db->count($name), 2, 'two rows counted after put');
     my ($rows) = $db->query($name, [ MongrelDB::condition('pk', { value => 2 }) ]);
     ok(@$rows >= 1, 'pk query returns the inserted row');
+    # The returned row must carry primary key 2. Confirm via SQL JSON mode,
+    # where rows are keyed by column name.
+    my $pk_rows = $db->sql("SELECT id FROM $name WHERE id = 2");
+    ok(ref($pk_rows) eq 'ARRAY' && @$pk_rows >= 1, 'sql SELECT returns the pk=2 row');
+    is($pk_rows->[0]{id}, 2, 'selected row id is 2');
 }
 
 # 3. Upsert updates on PK conflict.
@@ -73,6 +78,10 @@ my $unique = time() . substr(int(rand(100000)), 0, 5);
     $db->put($name, { 1 => 1, 2 => 'alpha', 3 => 10.0 });
     $db->upsert($name, { 1 => 1, 2 => 'alpha', 3 => 99.0 }, { 3 => 99.0 });
     is($db->count($name), 1, 'upsert does not duplicate the row');
+    # Query the row back and verify the upserted value landed. SQL JSON mode
+    # returns rows keyed by column name.
+    my $up_rows = $db->sql("SELECT amount FROM $name WHERE id = 1");
+    is($up_rows->[0]{amount}, 99.0, 'upserted amount is 99.0');
 }
 
 # 4. Transaction commits multiple ops atomically. Rows inserted in one
@@ -101,6 +110,10 @@ my $unique = time() . substr(int(rand(100000)), 0, 5);
     $db->put($name, { 1 => 1, 2 => 'alpha', 3 => 1.0 });
     $db->sql("INSERT INTO $name (id, label, amount) VALUES (2, 'beta', 2.0)");
     is($db->count($name), 2, 'sql INSERT adds a row');
+    # JSON mode makes SELECT return rows as JSON objects (column names as
+    # keys). Verify both rows come back with the right primary keys.
+    my $sel = $db->sql("SELECT id FROM $name ORDER BY id");
+    is_deeply([ map { $_->{id} } @$sel ], [ 1, 2 ], 'sql SELECT returns ids [1, 2]');
 }
 
 # 6. Schema lists the created table.
@@ -137,6 +150,11 @@ my $unique = time() . substr(int(rand(100000)), 0, 5);
         }),
     ]);
     is(scalar(@$rows), 2, 'range query returns exactly 2 rows');
+    # Only rows with id 3 (amount 90) and 4 (amount 100) qualify. Confirm
+    # their exact PK values via SQL JSON mode (rows keyed by column name).
+    my $range_sel = $db->sql("SELECT id FROM $name WHERE amount >= 80.0 ORDER BY id");
+    is_deeply([ map { $_->{id} } @$range_sel ], [ 3, 4 ],
+        'range query PK values are [3, 4]');
 }
 
 # 8. schemaFor on a nonexistent table dies with a not_found error.

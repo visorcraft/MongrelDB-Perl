@@ -198,6 +198,13 @@ sub _request {
 
     my $body = $resp->{content};
     return undef unless defined $body && length $body;
+    # Cap the response body at 256 MB so a runaway query or a misbehaving
+    # daemon cannot exhaust memory.
+    my $max_bytes = 256 * 1024 * 1024;    # 268435456 bytes
+    if (length($body) > $max_bytes) {
+        die _make_error('query',
+            "response body exceeds $max_bytes bytes (" . length($body) . " bytes)");
+    }
     # SQL SELECT returns Arrow IPC bytes; guard against non-JSON so the
     # caller can treat sql() as best-effort.
     return eval { JSON::PP->new->decode($body) };
@@ -345,11 +352,13 @@ sub deleteByPk {
     return;
 }
 
-# Execute SQL. Returns decoded JSON when the daemon answers in JSON;
-# otherwise undef (e.g. for INSERTs or Arrow IPC responses).
+# Execute SQL. Requests the JSON result format, so a SELECT returns a JSON
+# array of row objects keyed by column name. Returns the decoded rows for
+# SELECTs, or undef for statements (INSERT/UPDATE) that produce no rows.
 sub sql {
     my ($self, $statement) = @_;
-    return $self->_request('POST', 'sql', { sql => $statement });
+    return $self->_request('POST', 'sql',
+        { sql => $statement, format => 'json' });
 }
 
 # Run a native query. $conditions is an arrayref of { type => \%params }
