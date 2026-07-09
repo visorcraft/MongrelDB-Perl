@@ -17,6 +17,9 @@ my $db  = MongrelDB::connect($url);
 
 print "health: ", ($db->health() ? "true" : "false"), "\n";
 
+# Per-run unique suffix so concurrent/CI runs never collide on a table name.
+my $table = 'perl_orders_example_' . time();
+
 # The daemon requires JSON booleans (not 1/0) for primary_key/nullable.
 my ($T, $F) = (JSON::PP::true, JSON::PP::false);
 my $columns = [
@@ -25,7 +28,6 @@ my $columns = [
     { id => 3, name => 'amount',   ty => 'float64', primary_key => $F, nullable => $F },
 ];
 
-my $table = 'perl_orders_example';
 $db->createTable($table, $columns);
 
 # Cells map column id to value.
@@ -46,3 +48,7 @@ for my $r (@$rows) {
 # Run SQL.
 $db->sql("UPDATE $table SET amount = 200.0 WHERE customer = 'Bob'");
 print "count after sql: ", $db->count($table), "\n";
+
+# Guaranteed cleanup: ALWAYS drop the table at exit, even if the body dies,
+# so CI runs never leave an orphan table behind.
+END { eval { $db->dropTable($table) } }

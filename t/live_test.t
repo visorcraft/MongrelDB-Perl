@@ -124,8 +124,17 @@ my $unique = time() . substr(int(rand(100000)), 0, 5);
     $db->put($name, { 1 => 3, 2 => 'c', 3 => 90.0 });
     $db->put($name, { 1 => 4, 2 => 'd', 3 => 100.0 });
     # Only scores >= 80 should come back (90 and 100) - assert the count.
+    # The `amount` column is float64, so use `range_f64` (plain `range`
+    # expects an i64 bound and rejects floats). range_f64 requires both
+    # bounds (min/max) and the inclusivity flags (min_inclusive/max_inclusive).
     my ($rows) = $db->query($name, [
-        MongrelDB::condition('range', { column => 3, min => 80.0 }),
+        MongrelDB::condition('range_f64', {
+            column         => 3,
+            min            => 80.0,
+            max            => 200.0,
+            min_inclusive  => $T,
+            max_inclusive  => $T,
+        }),
     ]);
     is(scalar(@$rows), 2, 'range query returns exactly 2 rows');
 }
@@ -145,16 +154,19 @@ my $unique = time() . substr(int(rand(100000)), 0, 5);
     my $db   = MongrelDB::connect($url);
     my $name = "perl_idem_$unique";
     $db->createTable($name, $columns);
+    # Idempotency key must be unique per run so a stale key from an earlier
+    # run can't be replayed against this table.
+    my $key = "order-100-create-$unique";
     # First idempotent commit inserts the row.
     $db->transaction([
         { put => { table => $name, cells => [1, 100, 2, 'order', 3, 1.0] } },
-    ], 'order-100-create');
+    ], $key);
     is($db->count($name), 1, 'idempotent commit inserts one row');
     # A second, identical commit with the SAME key must not duplicate it.
     eval {
         $db->transaction([
             { put => { table => $name, cells => [1, 100, 2, 'order', 3, 1.0] } },
-        ], 'order-100-create');
+        ], $key);
     };
     is($db->count($name), 1, 'duplicate idempotent commit does not duplicate the row');
 }
