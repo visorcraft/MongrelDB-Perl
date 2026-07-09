@@ -1,0 +1,33 @@
+# Perl build artifacts
+blib/
+pm_to_blib
+Makefile
+Makefile.old
+MYMETA.*
+*.bak
+
+# Distribution build
+MongrelDB-*.tar.gz
+*.tar.gz
+
+# Test harness
+*.t.out
+*.t.log
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Agent / assistant instruction files are workspace-local, never published
+AGENTS.md
+CLAUDE.md
+.cursorrules
+.zcode/
