@@ -200,14 +200,16 @@ sub _request {
     my $body = $resp->{content};
     return undef unless defined $body && length $body;
     # Cap the response body at 256 MB so a runaway query or a misbehaving
-    # daemon cannot exhaust memory.
+    # daemon cannot exhaust memory. HTTP::Tiny is told to abort past this size
+    # in the constructor; this is a belt-and-suspenders check for custom
+    # transports and for responses that slip through.
     my $max_bytes = 256 * 1024 * 1024;    # 268435456 bytes
     if (length($body) > $max_bytes) {
         die _make_error('query',
             "response body exceeds $max_bytes bytes (" . length($body) . " bytes)");
     }
-    # SQL SELECT returns Arrow IPC bytes; guard against non-JSON so the
-    # caller can treat sql() as best-effort.
+    # The client requests the JSON result format, so guard against non-JSON so
+    # the caller can treat responses as best-effort.
     return eval { JSON::PP->new->decode($body) };
 }
 
@@ -250,6 +252,12 @@ sub _new {
             timeout       => 60,
             agent         => 'mongreldb-perl/' . $VERSION,
             keep_alive    => 1,
+            # Real streaming size guard: HTTP::Tiny aborts the connection as
+            # soon as the response body crosses this limit instead of buffering
+            # it all first. The post-check in _request stays as a
+            # belt-and-suspenders guard for custom transports passed via
+            # $opts->{http}.
+            max_size      => 268435456,
             # Security: never follow redirects (an Authorization header could
             # follow a redirect to an attacker-controlled host) and never use
             # proxy env vars unless the caller explicitly opts in via
