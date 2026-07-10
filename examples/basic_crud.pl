@@ -26,16 +26,28 @@ my $columns = [
     { id => 1, name => 'id',       ty => 'int64',   primary_key => $T, nullable => $F },
     { id => 2, name => 'customer', ty => 'varchar', primary_key => $F, nullable => $F },
     { id => 3, name => 'amount',   ty => 'float64', primary_key => $F, nullable => $F },
+    # `enum_variants` and `default_value` are forwarded verbatim to the
+    # daemon; the client does not interpret them.
+    {
+        id            => 4,
+        name          => 'status',
+        ty            => 'varchar',
+        primary_key   => $F,
+        nullable      => $F,
+        enum_variants => [ 'pending', 'active', 'closed' ],
+        default_value => 'pending',
+    },
 ];
 
 $db->createTable($table, $columns);
 
 # Cells map column id to value.
-$db->put($table, { 1 => 1, 2 => 'Alice', 3 => 99.50 });
-$db->put($table, { 1 => 2, 2 => 'Bob',   3 => 150.00 });
+$db->put($table, { 1 => 1, 2 => 'Alice', 3 => 99.50,  4 => 'active' });
+$db->put($table, { 1 => 2, 2 => 'Bob',   3 => 150.00, 4 => 'pending' });
 
 # Upsert updates on PK conflict.
-$db->upsert($table, { 1 => 1, 2 => 'Alice', 3 => 120.00 }, { 3 => 120.00 });
+$db->upsert($table, { 1 => 1, 2 => 'Alice', 3 => 120.00, 4 => 'closed' },
+    { 3 => 120.00 });
 
 print "count: ", $db->count($table), "\n";
 

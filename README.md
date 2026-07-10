@@ -60,14 +60,23 @@ $db->createTable('orders', [
     { id => 1, name => 'id',       ty => 'int64',   primary_key => $T, nullable => $F },
     { id => 2, name => 'customer', ty => 'varchar', primary_key => $F, nullable => $F },
     { id => 3, name => 'amount',   ty => 'float64', primary_key => $F, nullable => $F },
+    {
+        id            => 4,
+        name          => 'status',
+        ty            => 'varchar',
+        primary_key   => $F,
+        nullable      => $F,
+        enum_variants => [ 'pending', 'active', 'closed' ],
+        default_value => 'pending',
+    },
 ]);
 
 # Insert rows. Cells map column id to value.
-$db->put('orders', { 1 => 1, 2 => 'Alice', 3 => 99.50 });
-$db->put('orders', { 1 => 2, 2 => 'Bob',   3 => 150.00 });
+$db->put('orders', { 1 => 1, 2 => 'Alice', 3 => 99.50,  4 => 'active' });
+$db->put('orders', { 1 => 2, 2 => 'Bob',   3 => 150.00, 4 => 'pending' });
 
 # Upsert (insert or update on PK conflict).
-$db->upsert('orders', { 1 => 1, 2 => 'Alice', 3 => 120.00 }, { 3 => 120.00 });
+$db->upsert('orders', { 1 => 1, 2 => 'Alice', 3 => 120.00, 4 => 'closed' }, { 3 => 120.00 });
 
 # Query with a native index condition (learned-range index).
 my ($rows) = $db->query('orders', [
@@ -79,6 +88,33 @@ print $db->count('orders'), "\n";   # 2
 # Run SQL.
 $db->sql("UPDATE orders SET amount = 200.0 WHERE customer = 'Bob'");
 ```
+
+## Schema options
+
+Column descriptors accept extra keys that the client forwards verbatim
+to the daemon. The two most useful are `enum_variants` (a list of
+allowed string values) and `default_value` (filled in when a put does
+not supply one):
+
+```perl
+$db->createTable('orders', [
+    { id => 1, name => 'id',     ty => 'int64',   primary_key => $T, nullable => $F },
+    {
+        id            => 2,
+        name          => 'status',
+        ty            => 'varchar',
+        primary_key   => $F,
+        nullable      => $F,
+        enum_variants => [ 'pending', 'active', 'closed' ],
+        default_value => 'pending',
+    },
+]);
+```
+
+The client does not interpret these keys — they are part of the
+on-wire schema contract with `mongreldb-server`. The
+`t/wire_shape_test.t` suite pins the JSON shape so the daemon contract
+stays covered offline.
 
 ## Auth
 
