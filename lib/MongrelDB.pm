@@ -23,6 +23,7 @@ our $VERSION = '0.1.0';
 use Carp qw(croak);
 use HTTP::Tiny ();
 use JSON::PP ();
+use Scalar::Util qw(looks_like_number refaddr);
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -216,6 +217,17 @@ sub _request {
 sub _new {
     my ($class, $url, $opts) = @_;
     $opts ||= {};
+
+    # Reject CR/LF in any auth credential: token/username/password are placed
+    # verbatim into the Authorization header, so an embedded newline would
+    # allow header injection (request splitting). Validate before use.
+    for my $field (qw(token username password)) {
+        next unless defined $opts->{$field};
+        if ($opts->{$field} =~ /[\r\n]/) {
+            die _make_error('auth',
+                "auth $field must not contain CR or LF");
+        }
+    }
 
     my $auth_header;
     if (defined $opts->{token}) {
