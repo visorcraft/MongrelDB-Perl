@@ -190,6 +190,7 @@ sub _request {
         my ($message, $code, $op_index) = _parse_error_envelope($resp->{content});
         $message = "Server error ($status)" if !defined $message || $message eq '';
         my $kind = $KIND_FOR_STATUS{$status} // 'query';
+        $kind = 'not_found' if $message =~ /^not found:/i;
         die _make_error($kind, $message, {
             error_code => $code,
             op_index   => $op_index,
