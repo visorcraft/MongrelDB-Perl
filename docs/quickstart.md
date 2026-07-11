@@ -75,7 +75,9 @@ print $db->count('orders'), "\n";   # 2
 Column descriptors are pass-through: any extra keys are forwarded
 verbatim to the daemon. The two most useful keys are `enum_variants`
 (a list of allowed string values for a varchar column) and
-`default_value` (filled in when a `put` does not supply one):
+`default_value` (filled in when a `put` does not supply one). It may be any
+JSON scalar; pass the type expected by the column. Use `default_expr => 'now'`
+or `'uuid'` for a dynamic default:
 
 ```perl
 {

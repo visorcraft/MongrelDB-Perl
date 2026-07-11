@@ -85,6 +85,10 @@ package main;
             enum_variants => [ 'pending', 'active', 'closed' ],
             default_value => 'pending',
         },
+        { id => 3, name => 'retries', ty => 'int64', primary_key => $F,
+          nullable => $F, default_value => 3 },
+        { id => 4, name => 'created_at', ty => 'timestamp', primary_key => $F,
+          nullable => $F, default_expr => 'now' },
     ];
     my $constraints = {
         checks => [
@@ -104,7 +108,7 @@ package main;
     is($body->{name}, 'orders', 'wire body carries the table name');
 
     is(ref $body->{columns}, 'ARRAY', 'wire body carries columns as an array');
-    is(scalar @{ $body->{columns} }, 2, 'wire body carries both columns');
+    is(scalar @{ $body->{columns} }, 4, 'wire body carries all columns');
 
     my $status_col = $body->{columns}[1];
     is($status_col->{name}, 'status', 'second column is the status column');
@@ -126,6 +130,10 @@ package main;
         $body->{constraints}{checks}, $constraints->{checks},
         'top-level constraints.checks survives the JSON round-trip',
     );
+    is($body->{columns}[2]{default_value}, 3,
+        'static numeric default_value stays a JSON number');
+    is($body->{columns}[3]{default_expr}, 'now',
+        'dynamic default_expr survives verbatim');
 }
 
 # ---------------------------------------------------------------------------

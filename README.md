@@ -93,7 +93,9 @@ $db->sql("UPDATE orders SET amount = 200.0 WHERE customer = 'Bob'");
 
 Column descriptors accept extra keys that the client forwards verbatim
 to the daemon. The two most useful are `enum_variants` (a list of
-allowed string values) and `default_value` (filled in when a put does
+allowed string values), `default_value` (any JSON scalar, with the caller
+supplying the column's expected type), and `default_expr` (`now` or `uuid`,
+filled in dynamically). A static default is filled in when a put does
 not supply one):
 
 ```perl
