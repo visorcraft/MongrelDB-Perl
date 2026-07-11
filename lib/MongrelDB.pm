@@ -298,6 +298,13 @@ sub health {
     return $ok ? 1 : 0;
 }
 
+sub historyRetentionEpochs { 0 + ($_[0]->_request('GET', 'history/retention')->{history_retention_epochs} // 0) }
+sub earliestRetainedEpoch { 0 + ($_[0]->_request('GET', 'history/retention')->{earliest_retained_epoch} // 0) }
+sub setHistoryRetentionEpochs {
+    my ($self, $epochs) = @_;
+    return $self->_request('PUT', 'history/retention', { history_retention_epochs => 0 + $epochs });
+}
+
 # List all table names.
 sub tables {
     my ($self) = @_;

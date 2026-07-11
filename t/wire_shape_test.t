@@ -89,6 +89,10 @@ package main;
           nullable => $F, default_value => 3 },
         { id => 4, name => 'created_at', ty => 'timestamp', primary_key => $F,
           nullable => $F, default_expr => 'now' },
+        { id => 5, name => 'enabled', ty => 'bool', primary_key => $F, nullable => $F,
+          default_value => $T },
+        { id => 6, name => 'optional', ty => 'varchar', primary_key => $F, nullable => $T,
+          default_value => undef },
     ];
     my $constraints = {
         checks => [
@@ -108,7 +112,7 @@ package main;
     is($body->{name}, 'orders', 'wire body carries the table name');
 
     is(ref $body->{columns}, 'ARRAY', 'wire body carries columns as an array');
-    is(scalar @{ $body->{columns} }, 4, 'wire body carries all columns');
+    is(scalar @{ $body->{columns} }, 6, 'wire body carries all columns');
 
     my $status_col = $body->{columns}[1];
     is($status_col->{name}, 'status', 'second column is the status column');
@@ -134,6 +138,9 @@ package main;
         'static numeric default_value stays a JSON number');
     is($body->{columns}[3]{default_expr}, 'now',
         'dynamic default_expr survives verbatim');
+    ok($body->{columns}[4]{default_value}, 'boolean default stays true');
+    ok(exists $body->{columns}[5]{default_value} && !defined $body->{columns}[5]{default_value},
+        'null default stays null');
 }
 
 # ---------------------------------------------------------------------------
