@@ -86,8 +86,13 @@ package main;
             default_value => 'pending',
         },
     ];
+    my $constraints = {
+        checks => [
+            { id => 1, name => 'id_present', expr => { IsNotNull => 1 } },
+        ],
+    };
 
-    my $table_id = $db->createTable('orders', $columns);
+    my $table_id = $db->createTable('orders', $columns, $constraints);
     is($table_id, 42, 'createTable returns the table_id from the server response');
 
     # Decode the body the client would have sent. JSON::PP cannot decode
@@ -116,6 +121,10 @@ package main;
     is(
         $status_col->{ty}, 'varchar',
         'ty field is not disturbed by the additional keys',
+    );
+    is_deeply(
+        $body->{constraints}{checks}, $constraints->{checks},
+        'top-level constraints.checks survives the JSON round-trip',
     );
 }
 

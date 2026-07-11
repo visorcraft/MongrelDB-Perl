@@ -116,6 +116,16 @@ on-wire schema contract with `mongreldb-server`. The
 `t/wire_shape_test.t` suite pins the JSON shape so the daemon contract
 stays covered offline.
 
+Pass an optional third argument to `createTable` for engine constraints:
+
+```perl
+$db->createTable('orders', $columns, {
+    checks => [
+        { id => 1, name => 'id_present', expr => { IsNotNull => 1 } },
+    ],
+});
+```
+
 ## Auth
 
 ```perl
@@ -243,7 +253,7 @@ if (my $e = $@) {
 |---|---|
 | `health()` | Check daemon health |
 | `tables()` | List table names |
-| `createTable($name, $columns)` | Create a table, returns table id |
+| `createTable($name, $columns, $constraints)` | Create a table, optionally attach engine constraints; returns table id |
 | `dropTable($name)` | Drop a table |
 | `count($table)` | Row count |
 | `put($table, $cells)` | Insert a row |

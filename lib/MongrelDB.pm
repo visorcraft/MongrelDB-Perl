@@ -306,11 +306,14 @@ sub tables {
     return $data;
 }
 
-# Create a table. Returns the new table id, or 0 if none was reported.
+# Create a table. Optional $constraints is sent as the top-level engine
+# constraints object (for example { checks => [...] }).
 sub createTable {
-    my ($self, $name, $columns) = @_;
+    my ($self, $name, $columns, $constraints) = @_;
+    my $payload = { name => $name, columns => $columns };
+    $payload->{constraints} = $constraints if defined $constraints;
     my $data = $self->_request('POST', 'kit/create_table',
-        { name => $name, columns => $columns });
+        $payload);
     return (ref $data eq 'HASH') ? ($data->{table_id} // 0) : 0;
 }
 
