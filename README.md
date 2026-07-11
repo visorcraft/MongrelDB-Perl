@@ -92,11 +92,14 @@ $db->sql("UPDATE orders SET amount = 200.0 WHERE customer = 'Bob'");
 ## Schema options
 
 Column descriptors accept extra keys that the client forwards verbatim
-to the daemon. The two most useful are `enum_variants` (a list of
+to the daemon. The most useful keys are `enum_variants` (a list of
 allowed string values), `default_value` (any JSON scalar, with the caller
 supplying the column's expected type), and `default_expr` (`now` or `uuid`,
 filled in dynamically). A static default is filled in when a put does
-not supply one):
+not supply one. An explicit JSON `null` default stays a static null, a
+missing `default_value` means no default, and literal `"now"` / `"uuid"`
+values in `default_value` are treated as static strings — use
+`default_expr` for dynamic defaults:
 
 ```perl
 $db->createTable('orders', [
@@ -110,6 +113,25 @@ $db->createTable('orders', [
         enum_variants => [ 'pending', 'active', 'closed' ],
         default_value => 'pending',
     },
+]);
+```
+
+All static-default shapes are forwarded with their original JSON types:
+
+```perl
+$db->createTable('events', [
+    { id => 1, name => 'message', ty => 'varchar', primary_key => $F, nullable => $F,
+      default_value => 'none' },
+    { id => 2, name => 'count',   ty => 'int64',   primary_key => $F, nullable => $F,
+      default_value => 0 },
+    { id => 3, name => 'active',  ty => 'bool',    primary_key => $F, nullable => $F,
+      default_value => $T },
+    { id => 4, name => 'extra',   ty => 'varchar', primary_key => $F, nullable => $T,
+      default_value => undef },          # explicit JSON null
+    { id => 5, name => 'tag',     ty => 'varchar', primary_key => $F, nullable => $F,
+      default_value => 'now' },          # static literal, not dynamic
+    { id => 6, name => 'created', ty => 'timestamp', primary_key => $F, nullable => $F,
+      default_expr => 'now' },           # dynamic default
 ]);
 ```
 
@@ -267,6 +289,9 @@ if (my $e = $@) {
 | `schema()` | Full schema catalog |
 | `schemaFor($table)` | Single table schema |
 | `transaction($ops, $idempotency_key)` | Commit a batch atomically |
+| `historyRetentionEpochs()` | Get the current history-retention window (epochs) |
+| `earliestRetainedEpoch()` | Get the oldest epoch still queryable with `AS OF EPOCH` |
+| `setHistoryRetentionEpochs($epochs)` | Set the history-retention window; requires admin |
 
 ## Building and testing
 
@@ -299,7 +324,22 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full guide.
 
 ## History retention
 
-Use `historyRetentionEpochs`, `setHistoryRetentionEpochs`, and `earliestRetainedEpoch` with MongrelDB 0.48.0+.
+History retention controls how far back `AS OF EPOCH` time-travel queries
+can read. Use these methods with `mongreldb-server` 0.48.0+:
+
+```perl
+my $db = MongrelDB::connect('http://127.0.0.1:8453');
+
+my $window  = $db->historyRetentionEpochs;   # current retention window
+my $earliest = $db->earliestRetainedEpoch;   # oldest readable epoch
+
+# Increase the window. Requires admin auth. Increasing retention cannot
+# restore history already pruned past the previous earliest epoch.
+$db->setHistoryRetentionEpochs($window + 10);
+
+# Query historical state.
+my $rows = $db->sql("SELECT id FROM orders AS OF EPOCH $earliest");
+```
 
 ## License
 

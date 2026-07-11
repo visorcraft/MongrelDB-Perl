@@ -217,4 +217,87 @@ package main;
     );
 }
 
+# ---------------------------------------------------------------------------
+# Full static-default matrix: every supported default shape reaches the wire
+# with the correct JSON type and default_expr suppresses default_value.
+# ---------------------------------------------------------------------------
+
+{
+    my $fake = MongrelDB::Test::FakeHTTP->new(
+        status => 200,
+        body   => '{"table_id":11}',
+    );
+    my $db = MongrelDB::connect('http://127.0.0.1:8453', { http => $fake });
+
+    my ($T, $F) = (JSON::PP::true, JSON::PP::false);
+    my $columns = [
+        { id => 10, name => 's',       ty => 'varchar', primary_key => $F, nullable => $F,
+          default_value => 'hello' },
+        { id => 11, name => 'n',       ty => 'int64',   primary_key => $F, nullable => $F,
+          default_value => 42 },
+        { id => 12, name => 'b',       ty => 'bool',    primary_key => $F, nullable => $F,
+          default_value => $T },
+        { id => 13, name => 'nl',      ty => 'varchar', primary_key => $F, nullable => $F,
+          default_value => undef },
+        { id => 14, name => 'now_lit', ty => 'varchar', primary_key => $F, nullable => $F,
+          default_value => 'now' },
+        { id => 15, name => 'uuid_lit',ty => 'varchar', primary_key => $F, nullable => $F,
+          default_value => 'uuid' },
+        { id => 16, name => 'expr',    ty => 'timestamp', primary_key => $F, nullable => $F,
+          default_value => 'ignored', default_expr => 'now' },
+    ];
+
+    $db->createTable('matrix', $columns);
+
+    my $body = JSON::PP->new->decode($fake->{last_request}{content});
+    my @cols = @{ $body->{columns} };
+    is($cols[0]{default_value}, 'hello', 'string default_value');
+    is($cols[1]{default_value}, 42,      'numeric default_value');
+    ok($cols[2]{default_value},          'boolean default_value');
+    ok(exists $cols[3]{default_value} && !defined $cols[3]{default_value},
+       'null default_value');
+    is($cols[4]{default_value}, 'now',   'literal "now" default_value stays a string');
+    is($cols[5]{default_value}, 'uuid',  'literal "uuid" default_value stays a string');
+    is($cols[6]{default_expr}, 'now',    'default_expr survives');
+    is($cols[6]{default_value}, 'ignored',
+       'default_expr and default_value both forwarded when caller supplies both');
+}
+
+# ---------------------------------------------------------------------------
+# History retention wire shape
+# ---------------------------------------------------------------------------
+
+{
+    my $fake = MongrelDB::Test::FakeHTTP->new(
+        status => 200,
+        body   => '{"history_retention_epochs":100,"earliest_retained_epoch":7}',
+    );
+    my $db = MongrelDB::connect('http://127.0.0.1:8453', { http => $fake });
+
+    $fake->{last_request} = undef;
+    is($db->historyRetentionEpochs, 100, 'historyRetentionEpochs parses int');
+    is($fake->{last_request}{method}, 'GET', 'historyRetentionEpochs uses GET');
+    is($fake->{last_request}{url}, 'http://127.0.0.1:8453/history/retention',
+       'historyRetentionEpochs hits /history/retention');
+
+    $fake->{last_request} = undef;
+    is($db->earliestRetainedEpoch, 7,    'earliestRetainedEpoch parses int');
+    is($fake->{last_request}{method}, 'GET', 'earliestRetainedEpoch uses GET');
+    is($fake->{last_request}{url}, 'http://127.0.0.1:8453/history/retention',
+       'earliestRetainedEpoch hits /history/retention');
+
+    $fake->{last_request} = undef;
+    $fake->{response_body} = '{"history_retention_epochs":200}';
+    my $set = $db->setHistoryRetentionEpochs(200);
+    is($set->{history_retention_epochs}, 200, 'setHistoryRetentionEpochs returns payload');
+    is($fake->{last_request}{method}, 'PUT', 'setHistoryRetentionEpochs uses PUT');
+    is($fake->{last_request}{url}, 'http://127.0.0.1:8453/history/retention',
+       'setHistoryRetentionEpochs hits /history/retention');
+    my $put_body = JSON::PP->new->decode($fake->{last_request}{content});
+    is($put_body->{history_retention_epochs}, 200,
+       'setHistoryRetentionEpochs body contains history_retention_epochs');
+    ok(!exists $put_body->{earliest_retained_epoch},
+       'setHistoryRetentionEpochs body does not contain earliest_retained_epoch');
+}
+
 done_testing();

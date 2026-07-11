@@ -497,6 +497,82 @@ C<< $err->{type} >>:
 The categories are C<auth> (401/403), C<not_found> (404), C<constraint>
 (409), C<connection> (network), and C<query> (everything else).
 
+=head1 METHODS
+
+=over 4
+
+=item C<health()>
+
+Check daemon health. Returns true on success, false on failure.
+
+=item C<historyRetentionEpochs()>
+
+Return the current history-retention window in epochs.
+
+=item C<earliestRetainedEpoch()>
+
+Return the oldest epoch still readable with C<AS OF EPOCH>.
+
+=item C<setHistoryRetentionEpochs($epochs)>
+
+Set the history-retention window. Requires admin privileges.
+
+=item C<tables()>
+
+List all table names.
+
+=item C<createTable($name, $columns, $constraints)>
+
+Create a table. Optional C<$constraints> is sent as the top-level engine
+constraints object.
+
+=item C<dropTable($name)>
+
+Drop a table by name.
+
+=item C<count($table)>
+
+Return the row count for a table.
+
+=item C<put($table, $cells)>
+
+Insert a row.
+
+=item C<upsert($table, $cells, $update)>
+
+Insert or update on primary-key conflict.
+
+=item C<delete($table, $rowId)>
+
+Delete by row ID.
+
+=item C<deleteByPk($table, $pk)>
+
+Delete by primary key.
+
+=item C<query($table, $conditions, \\%opts)>
+
+Run a native query.
+
+=item C<sql($statement)>
+
+Execute SQL.
+
+=item C<schema()>
+
+Return the full schema catalog.
+
+=item C<schemaFor($table)>
+
+Return the schema descriptor for a single table.
+
+=item C<transaction($ops, $idempotency_key)>
+
+Commit a batch of operations atomically. An optional idempotency key makes
+the commit safe to retry.
+
+=back
+
 =head1 LICENSE
 
 Dual MIT OR Apache-2.0.

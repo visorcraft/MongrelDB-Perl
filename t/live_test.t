@@ -11,6 +11,7 @@
 use strict;
 use warnings;
 use Test::More;
+use Scalar::Util qw(looks_like_number);
 
 BEGIN {
     eval { require HTTP::Tiny; 1 }
@@ -21,6 +22,7 @@ use MongrelDB;
 use JSON::PP ();
 
 my $url = $ENV{MONGRELDB_URL} || 'http://127.0.0.1:8453';
+my $original_retention;   # restored in END after the retention live test
 
 # Probe the daemon once. If it is not up, skip every live test.
 sub server_reachable {
@@ -186,4 +188,40 @@ my $unique = time() . substr(int(rand(100000)), 0, 5);
         ], $key);
     };
     is($db->count($name), 1, 'duplicate idempotent commit does not duplicate the row');
+}
+
+# 10. History retention: get/set and AS OF EPOCH query.
+{
+    my $db = MongrelDB::connect($url);
+
+    $original_retention = $db->historyRetentionEpochs;
+    my $earliest = $db->earliestRetainedEpoch;
+    ok(looks_like_number($original_retention), 'historyRetentionEpochs returns a number');
+    ok(looks_like_number($earliest), 'earliestRetainedEpoch returns a number');
+
+    my $set = eval { $db->setHistoryRetentionEpochs($original_retention + 1) };
+    ok(!$@ && ref $set eq 'HASH', 'setHistoryRetentionEpochs succeeds');
+    is($set->{history_retention_epochs}, $original_retention + 1,
+       'setHistoryRetentionEpochs returns the new window');
+
+    my $name = "perl_retention_$unique";
+    $db->createTable($name, $columns);
+    $db->put($name, { 1 => 1, 2 => 'alpha', 3 => 1.0 });
+
+    # Read the floor after the writes: the table must exist at/before this
+    # epoch and the epoch must still be retained.
+    my $earliest_after = $db->earliestRetainedEpoch;
+    ok(looks_like_number($earliest_after), 'earliestRetainedEpoch numeric after writes');
+
+    # $earliest_after is returned by the server and validated above as numeric,
+    # so interpolating it here is safe. Do not interpolate user input.
+    my $rows = eval { $db->sql("SELECT id FROM $name AS OF EPOCH $earliest_after") };
+    ok(!$@ && ref $rows eq 'ARRAY',
+       'AS OF EPOCH query at earliest_retained_epoch executes without error');
+}
+
+# Restore the original retention window so later test runs start clean.
+END {
+    eval { MongrelDB::connect($url)->setHistoryRetentionEpochs($original_retention) }
+        if defined $original_retention;
 }

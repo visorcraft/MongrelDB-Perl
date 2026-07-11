@@ -73,11 +73,14 @@ print $db->count('orders'), "\n";   # 2
 ## Schema options
 
 Column descriptors are pass-through: any extra keys are forwarded
-verbatim to the daemon. The two most useful keys are `enum_variants`
-(a list of allowed string values for a varchar column) and
-`default_value` (filled in when a `put` does not supply one). It may be any
-JSON scalar; pass the type expected by the column. Use `default_expr => 'now'`
-or `'uuid'` for a dynamic default:
+verbatim to the daemon. The most useful keys are `enum_variants`
+(a list of allowed string values for a varchar column), `default_value`
+(filled in when a `put` does not supply one), and `default_expr` for dynamic
+`now` / `uuid` defaults. `default_value` may be any JSON scalar; pass the type
+expected by the column. An explicit JSON `null` stays a static null, a missing
+`default_value` means no default, and literal `"now"` / `"uuid"` values in
+`default_value` are treated as static strings — use `default_expr` for dynamic
+defaults:
 
 ```perl
 {
@@ -91,6 +94,26 @@ or `'uuid'` for a dynamic default:
 }
 ```
 
+All supported static-default shapes pass through with their original JSON
+types:
+
+```perl
+$db->createTable('events', [
+    { id => 1, name => 'message', ty => 'varchar', primary_key => $F, nullable => $F,
+      default_value => 'none' },
+    { id => 2, name => 'count',   ty => 'int64',   primary_key => $F, nullable => $F,
+      default_value => 0 },
+    { id => 3, name => 'active',  ty => 'bool',    primary_key => $F, nullable => $F,
+      default_value => $T },
+    { id => 4, name => 'extra',   ty => 'varchar', primary_key => $F, nullable => $T,
+      default_value => undef },          # explicit JSON null
+    { id => 5, name => 'tag',     ty => 'varchar', primary_key => $F, nullable => $F,
+      default_value => 'now' },          # static literal, not dynamic
+    { id => 6, name => 'created', ty => 'timestamp', primary_key => $F, nullable => $F,
+      default_expr => 'now' },           # dynamic default
+]);
+```
+
 The Perl client does not interpret these keys — they are part of the
 on-wire schema contract with `mongreldb-server`. The
 `t/wire_shape_test.t` suite pins the JSON shape so the contract stays
@@ -102,6 +125,21 @@ covered offline.
 my ($rows) = $db->query('orders', [
     MongrelDB::condition('pk', { value => 1 }),
 ]);
+```
+
+## History retention
+
+Control the time-travel window and query historical rows with `AS OF EPOCH`:
+
+```perl
+my $window   = $db->historyRetentionEpochs;
+my $earliest = $db->earliestRetainedEpoch;
+
+# Requires admin auth. Increasing the window cannot restore already-pruned
+# history past the previous earliest epoch.
+$db->setHistoryRetentionEpochs($window + 10);
+
+my $rows = $db->sql("SELECT id FROM orders AS OF EPOCH $earliest");
 ```
 
 ## Next steps
