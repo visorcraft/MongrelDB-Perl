@@ -50,9 +50,10 @@ sub request {
         headers => $opts->{headers} // {},
         content => $opts->{content},
     };
+    my $status = $self->{response_status};
     return {
-        success => 1,
-        status  => $self->{response_status},
+        success => ($status >= 200 && $status < 300) ? 1 : 0,
+        status  => $status,
         content => $self->{response_body},
     };
 }
@@ -298,6 +299,45 @@ package main;
        'setHistoryRetentionEpochs body contains history_retention_epochs');
     ok(!exists $put_body->{earliest_retained_epoch},
        'setHistoryRetentionEpochs body does not contain earliest_retained_epoch');
+}
+
+# ---------------------------------------------------------------------------
+# Error propagation: a non-2xx response must surface as a MongrelDB::Error
+# of the correct category, not a silent success.
+# ---------------------------------------------------------------------------
+
+{
+    my $fake = MongrelDB::Test::FakeHTTP->new(
+        status => 503,
+        body   => '{"error":{"message":"server overloaded","code":"UNAVAILABLE"}}',
+    );
+    my $db = MongrelDB::connect('http://127.0.0.1:8453', { http => $fake });
+
+    # GET path: historyRetentionEpochs must die.
+    my $err;
+    eval { $db->historyRetentionEpochs };
+    $err = $@;
+    ok(ref($err) && ref($err) eq 'MongrelDB::Error',
+       'non-2xx GET /history/retention raises MongrelDB::Error');
+    is($err->{type}, 'query',
+       '503 maps to the query error category');
+    is($err->{status}, 503,
+       'error object carries the HTTP status code');
+
+    # PUT path: setHistoryRetentionEpochs must also die.
+    $fake->{last_request} = undef;
+    eval { $db->setHistoryRetentionEpochs(99) };
+    $err = $@;
+    ok(ref($err) && ref($err) eq 'MongrelDB::Error',
+       'non-2xx PUT /history/retention raises MongrelDB::Error');
+    is($err->{type}, 'query',
+       '503 PUT maps to the query error category');
+
+    # Verify the request was still sent with the right method/path/body.
+    is($fake->{last_request}{method}, 'PUT',
+       'error-path PUT still sends the PUT method');
+    is($fake->{last_request}{url}, 'http://127.0.0.1:8453/history/retention',
+       'error-path PUT still hits /history/retention');
 }
 
 done_testing();
