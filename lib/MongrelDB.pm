@@ -394,7 +394,7 @@ sub sql {
 
 # Run a native query. $conditions is an arrayref of { type => \%params }
 # hashes (see MongrelDB::condition). Optional: projection (arrayref of
-# column ids), limit (int). Returns ($rows, $truncated).
+# column ids), limit (int), offset (int). Returns ($rows, $truncated).
 sub query {
     my ($self, $table, $conditions, $opts) = @_;
     $opts ||= {};
@@ -402,6 +402,7 @@ sub query {
     $payload{conditions} = $conditions if $conditions && @$conditions;
     $payload{projection} = $opts->{projection} if $opts->{projection};
     $payload{limit}      = $opts->{limit}      if $opts->{limit};
+    $payload{offset}     = $opts->{offset}     if $opts->{offset};
     my $data = $self->_request('POST', 'kit/query', \%payload);
     return ([], 0) unless ref $data eq 'HASH';
     return ($data->{rows} // [], $data->{truncated} ? 1 : 0);
