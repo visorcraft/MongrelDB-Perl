@@ -354,7 +354,8 @@ package main;
         { name => 'fm', column_id => 1, kind => 'fm_index' },
         { name => 'ann', column_id => 2, kind => 'ann', predicate => 'embedding IS NOT NULL',
           options => { ann => { m => 24, ef_construction => 96, ef_search => 48,
-                                quantization => 'dense' } } },
+                                quantization => 'dense', algorithm => 'diskann',
+                                diskann => { r => 64, l => 128, beam_width => 8, alpha => 120 } } } },
         { name => 'range', column_id => 1, kind => 'learned_range' },
         { name => 'minhash', column_id => 1, kind => 'minhash' },
         { name => 'sparse', column_id => 1, kind => 'sparse' },
@@ -369,6 +370,10 @@ package main;
               'all public index kinds reach wire');
     is($body->{indexes}[2]{options}{ann}{quantization}, 'dense',
        'Dense ANN reaches wire');
+    is($body->{indexes}[2]{options}{ann}{algorithm}, 'diskann',
+       'DiskANN algorithm reaches wire');
+    is($body->{indexes}[2]{options}{ann}{diskann}{r}, 64,
+       'DiskANN options reach wire');
     is($body->{indexes}[2]{predicate}, 'embedding IS NOT NULL',
        'index predicate reaches wire');
 }
