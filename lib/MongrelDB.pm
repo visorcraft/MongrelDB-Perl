@@ -317,9 +317,10 @@ sub tables {
 # Create a table. Optional $constraints is sent as the top-level engine
 # constraints object (for example { checks => [...] }).
 sub createTable {
-    my ($self, $name, $columns, $constraints) = @_;
+    my ($self, $name, $columns, $constraints, $indexes) = @_;
     my $payload = { name => $name, columns => $columns };
     $payload->{constraints} = $constraints if defined $constraints;
+    $payload->{indexes} = $indexes if defined $indexes;
     my $data = $self->_request('POST', 'kit/create_table',
         $payload);
     return (ref $data eq 'HASH') ? ($data->{table_id} // 0) : 0;

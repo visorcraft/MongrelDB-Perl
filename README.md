@@ -277,7 +277,7 @@ if (my $e = $@) {
 |---|---|
 | `health()` | Check daemon health |
 | `tables()` | List table names |
-| `createTable($name, $columns, $constraints)` | Create a table, optionally attach engine constraints; returns table id |
+| `createTable($name, $columns, $constraints, $indexes)` | Create a table with optional constraints and all index definitions |
 | `dropTable($name)` | Drop a table |
 | `count($table)` | Row count |
 | `put($table, $cells)` | Insert a row |

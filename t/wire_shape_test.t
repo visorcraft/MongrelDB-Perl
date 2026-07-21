@@ -340,4 +340,37 @@ package main;
        'error-path PUT still hits /history/retention');
 }
 
+{
+    my $fake = MongrelDB::Test::FakeHTTP->new(status => 200, body => '{"table_id":1}');
+    my $db = MongrelDB::connect('http://127.0.0.1:8453', { http => $fake });
+    my $columns = [
+        { id => 1, name => 'id', ty => 'int64', primary_key => JSON::PP::true },
+        { id => 2, name => 'embedding', ty => 'embedding(384)', embedding_source => {
+            kind => 'configured_model', provider_id => 'docs', model_id => 'model', model_version => '1',
+        } },
+    ];
+    my $indexes = [
+        { name => 'bm', column_id => 1, kind => 'bitmap' },
+        { name => 'fm', column_id => 1, kind => 'fm_index' },
+        { name => 'ann', column_id => 2, kind => 'ann', predicate => 'embedding IS NOT NULL',
+          options => { ann => { m => 24, ef_construction => 96, ef_search => 48,
+                                quantization => 'dense' } } },
+        { name => 'range', column_id => 1, kind => 'learned_range' },
+        { name => 'minhash', column_id => 1, kind => 'minhash' },
+        { name => 'sparse', column_id => 1, kind => 'sparse' },
+    ];
+    is($db->createTable('search_docs', $columns, undef, $indexes), 1,
+       'createTable with indexes returns table id');
+    my $body = JSON::PP->new->decode($fake->{last_request}{content});
+    is($body->{columns}[1]{embedding_source}{kind}, 'configured_model',
+       'embedding source reaches wire');
+    is_deeply([map { $_->{kind} } @{$body->{indexes}}],
+              [qw(bitmap fm_index ann learned_range minhash sparse)],
+              'all public index kinds reach wire');
+    is($body->{indexes}[2]{options}{ann}{quantization}, 'dense',
+       'Dense ANN reaches wire');
+    is($body->{indexes}[2]{predicate}, 'embedding IS NOT NULL',
+       'index predicate reaches wire');
+}
+
 done_testing();
