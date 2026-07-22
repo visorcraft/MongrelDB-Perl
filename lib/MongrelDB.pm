@@ -18,7 +18,7 @@ use strict;
 use warnings;
 use utf8;
 
-our $VERSION = '0.63.1';
+our $VERSION = '0.64.0';
 
 use Carp qw(croak);
 use HTTP::Tiny ();
@@ -384,6 +384,109 @@ sub deleteByPk {
     return;
 }
 
+# Structural HLC from durable recovery (0.64+). Returns undef when absent.
+sub parse_commit_hlc {
+    my ($raw) = @_;
+    return undef unless ref $raw eq 'HASH' && defined $raw->{physical_micros};
+    return {
+        physical_micros  => 0 + $raw->{physical_micros},
+        logical          => 0 + ($raw->{logical} // 0),
+        node_tiebreaker  => 0 + ($raw->{node_tiebreaker} // 0),
+    };
+}
+
+sub _parse_durable_outcome {
+    my ($raw) = @_;
+    $raw = {} unless ref $raw eq 'HASH';
+    return {
+        committed                   => exists $raw->{committed} ? $raw->{committed} : undef,
+        committed_statements        => $raw->{committed_statements},
+        last_commit_epoch           => $raw->{last_commit_epoch},
+        last_commit_epoch_text      => $raw->{last_commit_epoch_text},
+        last_commit_hlc             => parse_commit_hlc($raw->{last_commit_hlc}),
+        first_commit_statement_index => $raw->{first_commit_statement_index},
+        last_commit_statement_index  => $raw->{last_commit_statement_index},
+        completed_statements        => $raw->{completed_statements},
+        statement_index             => $raw->{statement_index},
+        serialization               => defined $raw->{serialization} ? "$raw->{serialization}" : '',
+        serialization_state         => $raw->{serialization_state},
+        terminal_state              => $raw->{terminal_state},
+    };
+}
+
+# Decode GET /queries/{id} body into a structural status object (0.64+).
+sub parse_query_status {
+    my ($raw) = @_;
+    $raw = {} unless ref $raw eq 'HASH';
+    my $outcome = _parse_durable_outcome($raw->{outcome});
+    my $durable = ref $raw->{durable} eq 'HASH'
+        ? _parse_durable_outcome($raw->{durable})
+        : undef;
+    my $top_hlc = parse_commit_hlc($raw->{last_commit_hlc});
+    return bless {
+        query_id             => defined $raw->{query_id} ? "$raw->{query_id}" : '',
+        status               => defined $raw->{status} ? "$raw->{status}" : '',
+        state                => defined $raw->{state} ? "$raw->{state}" : '',
+        server_state         => defined($raw->{server_state} // $raw->{state})
+            ? ($raw->{server_state} // $raw->{state}) . ''
+            : '',
+        terminal_state       => $raw->{terminal_state},
+        committed            => exists $raw->{committed} ? $raw->{committed} : undef,
+        committed_statements => $raw->{committed_statements},
+        last_commit_epoch    => $raw->{last_commit_epoch},
+        last_commit_hlc      => $top_hlc,
+        outcome              => $outcome,
+        durable              => $durable,
+        raw                  => $raw,
+    }, 'MongrelDB::QueryStatus';
+}
+
+# Text → embed → ANN retrieve (POST kit/retrieve_text, 0.64+).
+sub retrieve_text {
+    my ($self, $table, $embedding_column, $text, $opts) = @_;
+    $opts ||= {};
+    die _make_error('query', 'table is required') if !defined $table || $table eq '';
+    die _make_error('query', 'text is required')  if !defined $text  || $text eq '';
+    my %payload = (
+        table            => $table,
+        embedding_column => 0 + $embedding_column,
+        text             => $text,
+    );
+    $payload{k}           = 0 + $opts->{k}           if defined $opts->{k};
+    $payload{deadline_ms} = 0 + $opts->{deadline_ms} if defined $opts->{deadline_ms};
+    $payload{max_work}    = 0 + $opts->{max_work}    if defined $opts->{max_work};
+    my $data = $self->_request('POST', 'kit/retrieve_text', \%payload);
+    return { hits => [], provenance => {} } unless ref $data eq 'HASH';
+    return {
+        hits       => ref $data->{hits} eq 'ARRAY' ? $data->{hits} : [],
+        provenance => ref $data->{provenance} eq 'HASH' ? $data->{provenance} : {},
+    };
+}
+
+# Retained SQL status for durable recovery (GET queries/{query_id}).
+sub query_status {
+    my ($self, $query_id) = @_;
+    die _make_error('query', 'query_id is required')
+        if !defined $query_id || $query_id eq '';
+    my $data = $self->_request('GET', 'queries/' . _encode_segment($query_id));
+    die _make_error('query', 'query status response was not a JSON object')
+        unless ref $data eq 'HASH';
+    return parse_query_status($data);
+}
+
+# Request cancellation of a running SQL query (POST queries/{id}/cancel).
+sub cancel_query {
+    my ($self, $query_id) = @_;
+    die _make_error('query', 'query_id is required')
+        if !defined $query_id || $query_id eq '';
+    my $data = $self->_request(
+        'POST',
+        'queries/' . _encode_segment($query_id) . '/cancel',
+        {},
+    );
+    return ref $data eq 'HASH' ? $data : {};
+}
+
 # Execute SQL. Requests the JSON result format, so a SELECT returns a JSON
 # array of row objects keyed by column name. Returns the decoded rows for
 # SELECTs, or undef for statements (INSERT/UPDATE) that produce no rows.
@@ -392,6 +495,37 @@ sub sql {
     return $self->_request('POST', 'sql',
         { sql => $statement, format => 'json' });
 }
+
+package    # hide from PAUSE
+    MongrelDB::QueryStatus;
+
+sub commit_hlc {
+    my ($self) = @_;
+    return $self->{durable}{last_commit_hlc}
+        if $self->{durable} && $self->{durable}{last_commit_hlc};
+    return $self->{outcome}{last_commit_hlc}
+        if $self->{outcome} && $self->{outcome}{last_commit_hlc};
+    return $self->{last_commit_hlc};
+}
+
+sub serialization_state {
+    my ($self) = @_;
+    if ($self->{durable}) {
+        my $s = $self->{durable}{serialization_state};
+        return "$s" if defined $s && $s ne '';
+        $s = $self->{durable}{serialization};
+        return "$s" if defined $s && $s ne '';
+    }
+    if ($self->{outcome}) {
+        my $s = $self->{outcome}{serialization_state};
+        return "$s" if defined $s && $s ne '';
+        $s = $self->{outcome}{serialization};
+        return defined $s ? "$s" : '';
+    }
+    return '';
+}
+
+package MongrelDB;
 
 # Run a native query. $conditions is an arrayref of { type => \%params }
 # hashes (see MongrelDB::condition). Optional: projection (arrayref of
