@@ -61,6 +61,6 @@ ok(!defined MongrelDB::parse_commit_hlc(undef), 'nil hlc');
 ok(!defined MongrelDB::parse_commit_hlc({}), 'empty hlc');
 ok(!defined MongrelDB::parse_commit_hlc({ logical => 1 }), 'missing physical');
 
-is($MongrelDB::VERSION, '0.64.4', 'version');
+is($MongrelDB::VERSION, '0.64.5', 'version');
 
 done_testing();
