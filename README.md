@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://metacpan.org/dist/MongrelDB"><img src="https://img.shields.io/badge/CPAN-MongrelDB-39457e.svg" alt="CPAN" /></a>
+  <a href="https://github.com/visorcraft/MongrelDB-Perl"><img src="https://img.shields.io/badge/install-source-39457e.svg" alt="Install from source" /></a>
   <a href="https://www.perl.org/"><img src="https://img.shields.io/badge/Perl-%3E%3D5.14-39457e.svg" alt="Perl" /></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License" /></a>
 </p>
@@ -18,7 +18,22 @@
 
 | Surface | Package | Install |
 |---|---|---|
-| Perl client | `MongrelDB` | `cpanm MongrelDB` or copy `lib/MongrelDB.pm` |
+| Perl client | `MongrelDB` | `cpanm .` from a git clone, or copy `lib/MongrelDB.pm` |
+
+## Install
+
+The distribution is not yet on CPAN. Install it from a clone (the repo
+ships a `Makefile.PL`):
+
+```sh
+git clone https://github.com/visorcraft/MongrelDB-Perl.git
+cd MongrelDB-Perl
+cpanm .
+```
+
+Or, since the client is a single pure-Perl file with only core
+dependencies, copy `lib/MongrelDB.pm` into your project and point `use lib`
+at it.
 
 ## Requirements
 
