@@ -372,6 +372,11 @@ $db->setHistoryRetentionEpochs($window + 10);
 my $rows = $db->sql("SELECT id FROM orders AS OF EPOCH $earliest");
 ```
 
+## Related tools
+
+- [Mongrel](https://visorcraft.com/mongreldb) — Commercial multi-system workbench with native MongrelDB support.
+- [MongrelDB Viewer](https://github.com/visorcraft/MongrelDB-Viewer) — Free, open-source MongrelDB GUI and MCP server.
+
 ## License
 
 Dual-licensed under the **MIT License** or the **Apache License, Version 2.0**,
