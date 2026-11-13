@@ -18,7 +18,7 @@ use strict;
 use warnings;
 use utf8;
 
-our $VERSION = '0.65.1';
+our $VERSION = '0.66.0';
 
 use Carp qw(croak);
 use HTTP::Tiny ();
